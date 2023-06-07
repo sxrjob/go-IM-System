@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 type Server struct {
@@ -26,6 +27,7 @@ func NewServer(ip string, port int) *Server {
 	return server
 }
 
+// 广播消息
 func (this *Server) BroadCast(user *User, msg string) {
 	sendMsg := "[" + user.Addr + "]" + user.Name + ":" + msg
 
@@ -54,6 +56,9 @@ func (this *Server) Handler(conn net.Conn) {
 	//用户上线
 	user.Online()
 
+	// 监听用户是否活跃
+	isLive := make(chan bool)
+
 	// 接受客户端发送的消息
 	go func() {
 		buf := make([]byte, 4096)
@@ -73,11 +78,33 @@ func (this *Server) Handler(conn net.Conn) {
 			msg := string(buf[:n-1])
 
 			//将获取的消息广播
-			this.BroadCast(user, msg)
+			user.DoMessage(msg)
+
+			isLive <- true
 		}
 	}()
 	//阻塞handler
-	select {}
+	for {
+		select {
+		case <-isLive:
+			//当前用户是活跃的 重置定时器
+			//不做任何事，激活select, 更新下面的定时器
+
+		case <-time.After(time.Second * 60 * 60):
+			// 已经超时
+			user.SendMsg("you was clean out !\n")
+
+			//销毁资源
+			close(user.C)
+
+			//关闭连接
+			conn.Close()
+
+			// 推出当前Handler
+			return // runtime.Goexit()
+
+		}
+	}
 }
 
 // 启动服务器的接口
